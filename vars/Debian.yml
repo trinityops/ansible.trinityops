@@ -1,0 +1,7 @@
+---
+
+ssh_packages:
+  - python3-apt
+  - openssh-server
+
+ssh_service: ssh

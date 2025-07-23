@@ -1,0 +1,108 @@
+---
+###################
+# Gather OS Facts #
+###################
+- name: gather facts
+  setup:
+  tags:
+    - vars
+    - install
+
+- name: gather os specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - files:
+        - "{{ ansible_distribution }}-{{ ansible_distribution_major_version }}.yml"
+        - "{{ ansible_distribution }}.yml"
+        - "{{ ansible_os_family }}.yml"
+  tags:
+    - vars
+    - install
+
+#######################
+# Install OS Packages #
+#######################
+- name: perform an apt update
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when:
+    - ansible_os_family == 'Debian'
+
+- name: install ssh server
+  package:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - "{{ ssh_packages | default([]) }}"
+  tags:
+    - install
+
+#################
+# Configure SSH #
+#################
+- name: copy motd.ssh
+  template:
+    src: motd.ssh.j2
+    dest: /etc/motd.ssh
+    mode: 0444
+  notify: 'restart ssh service'
+  tags:
+    - copy-motd
+
+- name: configure ssh
+  template:
+    src: "{{ item }}"
+    dest: "{{ ssh_config }}"
+    backup: yes
+  with_first_found:
+    - "{{ ansible_distribution }}-{{ ansible_distribution_major_version }}.sshd_config.j2"
+    - "{{ ansible_distribution }}.sshd_config.j2"
+  notify: 'restart ssh service'
+  tags:
+    - template-sshd-config
+
+######################
+# Configure SSH Keys #
+######################
+- name: make sure ssh directory exists
+  file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode | default('0700') }}"
+  with_items:
+    - "{{ user_ssh_dirs | default([]) }}"
+  tags:
+    - create-root-ssh-dir
+
+- name: manage ssh keys authorized_keys
+  authorized_key:
+    user: "{{ item.user }}"
+    key: "{{ item.key }}"
+    key_options: "{{ item.key_options | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    comment: "{{ item.comment | default(omit) }}"
+    follow: "{{ item.follow | default(omit) }}"
+    exclusive: "{{ item.exclusive | default(omit) }}"
+    manage_dir: "{{ item.manage_dir | default(omit) }}"
+    path: "{{ item.path | default(omit) }}"
+    validate_certs: "{{ item.validate_certs | default(omit) }}"
+  with_items:
+    - "{{ ssh_keys | default([]) }}"
+  tags:
+    - ssh-keys
+
+###################
+# SELinux Changes #
+###################
+- name: allow ssh for selinux
+  seport:
+    ports: "{{ ssh_port }}"
+    proto: tcp
+    setype: ssh_port_t
+    state: present
+    reload: true
+  when:
+    - ansible_os_family == "RedHat"
+    - selinux_enabled | bool
+  notify: restart ssh service
