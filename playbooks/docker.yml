@@ -1,0 +1,32 @@
+---
+- name: master playbook to bootstrap and install docker
+  hosts: all
+  gather_facts: true
+  vars:
+    docker_user: "debian"
+  pre_tasks:
+    - name: set playbook dir to root of this repository
+      set_fact:
+        ansible_root_dir: "{{ playbook_dir | regex_replace('/playbooks', '') }}"
+      tags:
+        - bootstrap
+        - docker
+
+  roles:
+    # Install Base Packages
+    - role: bootstrap
+      apt_keys: []
+      apt_repositories: []
+      pip_packages_to_install: []
+      tags:
+        - bootstrap
+        - first-boot
+
+    - role: docker
+      docker_version: "{{ global_docker_version | default(omit) }}"
+      docker_packages_additional:
+        - docker-compose
+      docker_users:
+        - "{{ docker_user }}"
+      tags:
+        - docker

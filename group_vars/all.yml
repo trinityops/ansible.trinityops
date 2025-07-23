@@ -1,0 +1,16 @@
+---
+
+##################
+# ssh-port-probe #
+##################
+ssh_keys: []
+
+# elevate to root
+ssh_key_sudo: true
+
+##########
+# Docker #
+##########
+# Kubernetes recommended
+# https://github.com/kubernetes/kubernetes/blob/master/build/dependencies.yaml#L58
+# global_docker_version: "5:24.0*"

@@ -1,0 +1,13 @@
+---
+
+- name: bootstrap any host
+  hosts: all
+  pre_tasks:
+    - name: override apt repos for proxmox
+      set_fact:
+        apt_keys: []
+        apt_repositories: []
+        pip_packages_to_install: []
+      when: inventory_hostname in groups['proxmox']
+  roles:
+    - role: bootstrap
