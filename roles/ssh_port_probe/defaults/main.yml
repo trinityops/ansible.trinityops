@@ -1,0 +1,41 @@
+---
+
+# Workarounds for running the playbook in this role
+ansible_root_dir: "{{ playbook_dir }}"
+ansible_root_dir_roles_path: "{{ ansible_root_dir }}/roles"
+
+#################
+# Test SSH Port #
+#################
+modified_ssh_port: 314
+
+wait_for_ssh_timeout: 5
+
+##############################
+# Bootstrap host with Python #
+##############################
+bootstrap_python: false
+
+os_without_python_preinstalled:
+  - 'Debian 9'
+  - 'Debian 10'
+  - 'Debian 11'
+
+python_install_cmd: "apt update -y && apt install python3 -y"
+probe_python_interpreter: "/usr/bin/python"
+remote_python: "python3"
+
+set_python_alterative: true
+alternative_python_path: "/usr/bin/python3"
+
+############
+# SSH Keys #
+############
+configure_ssh_keys: true
+
+ssh_pub_key: "id_rsa.pub"
+
+ssh_keys:
+  - name: default user ssh key
+    user: "{{ ansible_user | default('root') }}"
+    key: '{{ lookup("file", "~/.ssh/" + ssh_pub_key) | default("") }}'

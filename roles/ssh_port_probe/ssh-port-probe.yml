@@ -1,0 +1,17 @@
+---
+
+- name: probe ssh ports and install ssh keys
+  hosts: all
+  gather_facts: false
+  vars:
+    roles_dir: roles
+  pre_tasks:
+    # Workaround to run playbook inside this role.
+    - name: set playbook dir when running this playbook here
+      set_fact:
+        ansible_root_dir: "{{ playbook_dir | regex_replace('/{{ roles_dir }}/ansible-ssh-port-probe', '') }}"
+      when: "'/{{ roles_dir }}/ansible-ssh-port-probe' in playbook_dir"
+      tags: []
+
+  roles:
+    - role: ansible-ssh-port-probe

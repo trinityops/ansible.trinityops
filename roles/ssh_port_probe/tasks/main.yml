@@ -1,0 +1,138 @@
+---
+#####################
+# Probe SSH Port(s) #
+#####################
+- name: "test ssh on port {{ modified_ssh_port }}"
+  wait_for:
+    port: "{{ modified_ssh_port }}"
+    state: 'started'
+    timeout: "{{ wait_for_ssh_timeout }}"
+    host: "{{ hostname_override | default(inventory_hostname | default('ansible_host')) }}"
+  delegate_to: localhost
+  register: custom_ssh
+  ignore_errors: true
+
+- name: test default ssh port
+  wait_for:
+    port: 22
+    state: 'started'
+    timeout: "{{ wait_for_ssh_timeout | default('5') }}"
+    host: "{{ hostname_override | default(inventory_hostname | default('ansible_host')) }}"
+  delegate_to: localhost
+  register: default_ssh
+  ignore_errors: true
+
+- name: "set ansible_ssh_port to {{ modified_ssh_port | default('') }}"
+  set_fact:
+    ansible_ssh_port: "{{ modified_ssh_port | default('') }}"
+    ansible_port: "{{ modified_ssh_port | default('') }}"
+  when:
+    - custom_ssh is defined
+    - modified_ssh_port != ""
+    - custom_ssh.elapsed < wait_for_ssh_timeout
+
+- name: set ansible_ssh_port to default
+  set_fact:
+    ansible_ssh_port: 22
+    ansible_port: 22
+  when:
+    - default_ssh.elapsed < wait_for_ssh_timeout
+
+###############################
+# Pre-configure OS for Python #
+###############################
+- name: manually check OS version
+  raw: "cat /etc/issue | awk '{ print $1,$3 }' | xargs echo -n"
+  register: manual_os_version
+  changed_when: false
+
+- name: set bootstrap_python for localhost
+  set_fact:
+    bootstrap_python: true
+  when:
+    - manual_os_version.stdout in os_without_python_preinstalled
+  delegate_to: localhost
+  tags:
+    - bootstrap-python
+
+- name: check to see if python is installed
+  raw: python3 -V
+  changed_when: false
+  failed_when: false
+  register: python_installed
+  when:
+    - bootstrap_python | bool
+
+- name: install python
+  raw: "{{ python_install_cmd }}"
+  changed_when: false
+  when:
+    - bootstrap_python | bool
+    - manual_os_version.stdout | regex_search('Debian')
+    - manual_os_version.stdout in os_without_python_preinstalled
+    - not python_installed.stdout | regex_search('Python')
+  tags:
+    - bootstrap-python
+
+- name: override default python version
+  set_fact:
+    ansible_python_interpreter: "{{ remote_python }}"
+  when: manual_os_version.stdout in os_without_python_preinstalled
+
+################################################
+# Make the installed version of python default #
+################################################
+- name: get installed python version
+  raw: "find /usr/bin -iname 'python*' -type f | head -n 1 | xargs echo -n"
+  register: installed_python_version_path
+  changed_when: false
+  failed_when: false
+  when:
+    - bootstrap_python | bool
+    - set_python_alterative | bool
+    - not python_installed.stdout | regex_search('Python')
+
+- name: make python default alternative
+  alternatives:
+    name: python
+    link: "{{ probe_python_interpreter }}"
+    path: "{{ installed_python_version_path.stdout }}"
+    priority: 1
+  when:
+    - bootstrap_python | bool
+    - set_python_alterative | bool
+    - not python_installed.stdout | regex_search('Python')
+
+# Manual version
+#- name: set default python
+#  raw: "update-alternatives --install /usr/bin/python python /usr/bin/python3 1"
+#  changed_when: false
+#  when:
+#    - bootstrap_python | bool
+
+#######################
+# Test SSH Connection #
+#######################
+- name: try to ansible ping the host before moving on
+  ping:
+
+####################
+# Install SSH Keys #
+####################
+- name: install ssh key(s)
+  authorized_key:
+    user: "{{ item.user }}"
+    key: "{{ item.key }}"
+    key_options: "{{ item.key_options | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    comment: "{{ item.comment | default(omit) }}"
+    follow: "{{ item.follow | default(omit) }}"
+    exclusive: "{{ item.exclusive | default(omit) }}"
+    manage_dir: "{{ item.manage_dir | default(omit) }}"
+    path: "{{ item.path | default(omit) }}"
+    validate_certs: "{{ item.validate_certs | default(omit) }}"
+  become: "{{ ssh_key_sudo | default(false) }}"
+  with_items:
+    - "{{ ssh_keys | default([]) }}"
+  when:
+    - configure_ssh_keys | bool
