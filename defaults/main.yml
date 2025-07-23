@@ -1,0 +1,50 @@
+---
+
+# Workarounds for running the playbook in this role
+ansible_root_dir: "{{ playbook_dir }}"
+ansible_root_dir_roles_path: "{{ ansible_root_dir }}/roles"
+
+# It is highly recommended that you use the following
+# Ansible role to install/configure Docker: lean_delivery.docker
+systemd_docker_packages:
+  - docker-compose-plugin
+
+install_os_deb_version: false
+
+pip_executable: pip3
+systemd_docker_pip_packages:
+ - docker
+ - docker-compose
+
+systemd_docker_make_dirs: true
+
+systemd_container_path: "/etc/systemd/system"
+
+systemd_docker_cache_dir: cache
+systemd_docker_cache_path: "{{ ansible_root_dir }}/{{ systemd_docker_cache_dir }}"
+
+systemd_docker_git_repositories_to_checkout: []
+
+systemd_unit_prefix: ''
+systemd_unit_postfix: '-container'
+
+systemd_docker_perform_restarts: true
+
+docker_storage_mount: /opt
+systemd_docker_owner: root
+systemd_docker_group: root
+
+# Example Docker App. https://hub.docker.com/_/nginx/
+systemd_docker_apps:
+  - name: nginx
+    description: Nginx
+    container: nginx
+    volumes:
+      - { src: '/web', mount: '/usr/share/nginx/html', ro: true }
+    ports:
+      - { src: '80', dest: '8443' }
+    raw_options: []
+    extra_args:
+      - 'PUID=0'
+      - 'PGID=0'
+    files_to_dl: []
