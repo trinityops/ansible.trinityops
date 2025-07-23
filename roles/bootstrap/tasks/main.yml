@@ -1,0 +1,420 @@
+---
+######################
+## OS Bootstrapping ##
+######################
+#################################
+# Preconfigure OSes for Ansible #
+#################################
+# Ping host, and upon Ansible ping failure, do the below steps, i.e. set a bool flag. Otherwise skip
+- name: test Ansible ssh connection
+  ping:
+  register: ansible_first_ping
+  changed_when: false
+  failed_when: false
+  tags:
+    - preconfigure-ansible
+
+- name: preconfigure systems for Ansible if ping fails
+  block:
+    - name: manually check OS distribution
+      raw: "cat /etc/issue | awk '{ print $1 }' | xargs echo -n"
+      register: manual_os_distribution
+      failed_when: false
+      changed_when: false
+      tags:
+        - preconfigure-ansible
+
+    - name: manually check OS version
+      raw: "cat /etc/issue | awk '{ print $3 }' | xargs echo -n"
+      register: manual_os_version
+      failed_when: false
+      changed_when: false
+      tags:
+        - preconfigure-ansible
+
+    - name: manually detect OS family
+      raw: uname -s
+      register: is_osx
+      failed_when: false
+      changed_when: false
+      tags:
+        - preconfigure-ansible
+        - osx-prep
+
+    - name: determine if homebrew is installed
+      stat:
+        path: /usr/local/bin/brew
+      register: homebrew_present
+      when:
+        - "is_osx.stdout.find('Darwin') != -1"
+      tags:
+        - preconfigure-ansible
+        - osx-prep
+
+    - name: install python and deps for ansible modules for Fedora
+      raw: sudo dnf install -y {{ dnf_packages_to_preinstall | join(' ') }}
+      when: manual_os_distribution.stdout.find('Fedora') != -1
+      become: yes
+      tags:
+        - preconfigure-ansible
+        - fedora-prep
+
+    - name: install python and deps for ansible modules Debian systems
+      raw: sudo apt install -y {{ apt_packages_to_preinstall | join(' ') }}
+      when:
+        - manual_os_distribution.stdout.find('Debian') != -1 or
+            manual_os_distribution.stdout.find('Ubuntu') != -1
+      become: yes
+      tags:
+        - preconfigure-ansible
+        - apt-prep
+
+    - name: install homebrew for ansible modules
+      command: /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+      when:
+        - is_osx.stdout.find('Darwin') != -1
+        - homebrew_present is defined
+        - not homebrew_present.stat.exists | bool
+      tags:
+        - preconfigure-ansible
+        - osx-prep
+  when:
+    - ansible_first_ping.ping != "pong" or force_bootstrap | bool
+
+- name: test ping again
+  ping:
+  tags:
+    - preconfigure-ansible
+
+###################
+# Gather OS Facts #
+###################
+- name: get facts manually
+  setup:
+  tags:
+    - ssh
+    - brew
+    - brew-cask
+    - pip
+    - gems
+
+- name: gather os specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_distribution }}-{{ ansible_distribution_major_version }}.yml"
+    - "{{ ansible_distribution }}.yml"
+    - "{{ ansible_os_family }}.yml"
+    - default.yml
+  tags:
+    - vars
+    - brew
+    - brew-cask
+    - pip
+    - gems
+
+####################
+# Prepare Packages #
+####################
+- name: remove unneccessary packages
+  package:
+    name: "{{ item }}"
+    state: absent
+    use: "{{ package_mgr_to_use }}"
+  with_items:
+    - "{{ packages_to_remove | default([]) }}"
+    - "{{ extra_packages_to_remove | default([]) }}"
+  tags:
+    - packages
+    - remove-packages
+
+- name: configure Debian systems
+  block:
+    - name: Add apt keys
+      apt_key:
+        keyserver: "{{ item.gpg_key | default(omit) }}"
+        id: "{{ item.gpg_key_id | default(omit) }}"
+        data: "{{ item.data | default(omit) }}"
+        file: "{{ item.file | default(omit) }}"
+        keyring: "{{ item.keyring | default(omit) }}"
+        url: "{{ item.url | default(omit) }}"
+        codename: "{{ item.codename | default(omit) }}"
+        filename: "{{ item.filename | default(omit) }}"
+        validate_certs: "{{ item.validate_certs | default(omit) }}"
+        state: "{{ item.state | default('present') }}"
+      with_items:
+        - "{{ apt_keys | default([]) }}"
+        - "{{ extra_apt_keys | default([]) }}"
+      tags:
+        - package-repos
+
+    - name: configure apt repositories
+      apt_repository:
+        repo: "{{ item.repo }}"
+        filename: "{{ item.filename | default(omit) }}"
+        state: "{{ item.state | default('present') }}"
+        mode: "{{ item.mode | default(omit) }}"
+        codename: "{{ item.codename | default(omit) }}"
+        update_cache: "{{ item.update_cache | default(true) }}"
+        validate_certs: "{{ item.validate_certs | default(omit) }}"
+      with_items:
+        - "{{ apt_repositories | default([]) }}"
+        - "{{ extra_apt_repositories | default([]) }}"
+      tags:
+        - package-repos
+
+    - name: perform an apt update
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+  when:
+    - ansible_os_family == 'Debian'
+
+- name: configure RedHat systems
+  block:
+    - name: Add an rpm keys
+      rpm_key:
+        key: "{{ item.repo_key }}"
+        state: present
+      with_items:
+        - "{{ yum_keys | default([]) }}"
+        - "{{ extra_yum_keys | default([]) }}"
+      tags:
+        - package-repos
+
+    - name: configure yum repositories
+      yum_repository:
+        name: "{{ item.repo_name }}"
+        file: "{{ item.file }}"
+        description: "{{ item.repo_description | default(omit) }}"
+        baseurl: "{{ item.repo_baseurl }}"
+        gpgkey: "{{ item.repo_key | default(omit) }}"
+        gpgcheck: "{{ item.gpg_check | default(false) }}"
+        repo_gpgcheck: "{{ item.repo_gpgcheck | default(omit) }}"
+        sslverify: "{{ item.sslverify | default(omit) }}"
+        sslcacert: "{{ item.sslcacert | default(omit) }}"
+        metadata_expire: "{{ item.metadata_expire | default(omit) }}"
+        enabled: "{{ item.enabled | default(true) }}"
+        exclude: "{{ item.exclude | default(omit) }}"
+        state: "{{ item.state | default(omit) }}"
+      with_items:
+        - "{{ yum_repos | default([]) }}"
+        - "{{ extra_yum_repos | default([]) }}"
+      tags:
+        - package-repos
+  when:
+    - 'ansible_os_family == "RedHat"'
+
+#######################
+# Install OS Packages #
+#######################
+- name: pre-install software
+  package:
+    name: "{{ item }}"
+    state: present
+    use: "{{ package_mgr_to_use }}"
+  loop:
+    - "{{ packages_to_preinstall | default([]) }}"
+    - "{{ extra_packages_to_preinstall | default([]) }}"
+  tags:
+    - packages
+    - packages-to-preinstall
+
+- name: install software
+  package:
+    name: "{{ item }}"
+    state: present
+    use: "{{ package_mgr_to_use }}"
+  loop:
+    - "{{ packages_to_install | default([]) }}"
+    - "{{ extra_packages_to_install | default([]) }}"
+  tags:
+    - packages
+    - packages-to-install
+    - brew
+    - brew-cask
+
+- name: install homebrew casks
+  homebrew_cask:
+    name: "{{ item }}"
+    state: present
+    install_options: "appdir=/Applications"
+  retries: 5
+  loop:
+    - "{{ homebrew_casks_to_install | default([]) }}"
+    - "{{ extra_homebrew_casks_to_install | default([]) }}"
+  when:
+    - ansible_os_family == "Darwin"
+  tags:
+    - packages
+    - packages-to-install
+    - brew
+    - brew-cask
+
+########################
+# Install pip Packages #
+########################
+- name: install pip
+  easy_install:
+    name: pip
+    state: present
+  become: yes
+  when: ansible_os_family != "Debian"
+
+- name: install pip packages for OSX
+  pip:
+    name: "{{ item }}"
+    state: present
+    executable: "{{ pip_executable | default(omit) }}"
+    extra_args: --ignore-installed six
+  become: true
+  with_items:
+    - "{{ pip_packages_to_install | default([]) }}"
+    - "{{ extra_pip_packages_to_install | default([]) }}"
+  when:
+    - ansible_os_family == "Darwin"
+  tags:
+    - pip
+
+- name: install pip packages
+  pip:
+    name: "{{ item }}"
+    state: present
+    executable: "{{ pip_executable | default(omit) }}"
+  with_items:
+    - "{{ pip_packages_to_install | default([]) }}"
+    - "{{ extra_pip_packages_to_install | default([]) }}"
+  when:
+    - ansible_os_family != "Darwin"
+  tags:
+    - pip
+
+######################################
+# Install Custom/Downloaded Packages #
+######################################
+- name: install custom/downloaded packages
+  block:
+    - name: manually download packages and files
+      get_url:
+        url: "{{ item.url }}"
+        dest: '{{ item.path }}'
+        mode: 0644
+        validate_certs: no
+      with_items:
+        - "{{ dl_packages_to_install | default([]) }}"
+        - "{{ extra_dl_packages_to_install | default([]) }}"
+      when:
+        - item.path is defined
+      tags:
+        - pkgs
+        - dl
+
+    - name: install downloaded yum pkgs
+      yum:
+        name: "{{ item.url }}"
+        state: present
+      with_items:
+        - "{{ dl_packages_to_install | default([]) }}"
+        - "{{ extra_dl_packages_to_install | default([]) }}"
+      when:
+        - ansible_distribution == 'CentOS'
+        - item.path is not defined
+        - "item.binary_type == 'rpm'"
+      tags:
+        - pkgs
+        - dl
+        - install-pkgs
+
+    - name: install downloaded dnf pkgs
+      dnf:
+        name: "{{ item.url }}"
+        state: present
+      with_items:
+        - "{{ dl_packages_to_install | default([]) }}"
+        - "{{ extra_dl_packages_to_install | default([]) }}"
+      when:
+        - "ansible_distribution == 'Fedora'"
+        - item.path is not defined
+        - "item.binary_type == 'rpm'"
+      tags:
+        - pkgs
+        - dl
+        - install-pkgs
+
+    - name: install deb packages from web url
+      apt:
+        deb: "{{ item.url }}"
+        state: present
+      with_items:
+        - "{{ dl_packages_to_install | default([]) }}"
+        - "{{ extra_dl_packages_to_install | default([]) }}"
+      when:
+        - ansible_os_family == "Debian"
+        - item.path is not defined
+        - "item.binary_type == 'deb'"
+      tags:
+        - pkgs
+        - dl
+        - install-pkgs
+
+    - name: install downloaded apt pkgs
+      apt:
+        deb: "{{ item.path }}"
+        state: present
+      with_items:
+        - "{{ dl_packages_to_install | default([]) }}"
+        - "{{ extra_dl_packages_to_install | default([]) }}"
+      when:
+        - ansible_os_family == "Debian"
+        - item.path is defined
+        - "item.binary_type == 'deb'"
+      tags:
+        - pkgs
+        - dl
+        - install-pkgs
+
+    ####################
+    # Install Archives #
+    ####################
+    - name: unarchive any downloaded files
+      unarchive:
+        src: "{{ item.path }}"
+        dest: "{{ item.extracted_path }}"
+        remote_src: "{{ item.remote_src | default(true) }}"
+      with_items:
+        - "{{ dl_packages_to_install | default([]) }}"
+        - "{{ extra_dl_packages_to_install | default([]) }}"
+      when:
+        - item.extracted_path is defined
+        - "item.binary_type == 'tar'"
+      tags:
+        - unarchive
+
+    - name: install unarchived files
+      shell: "{{ item.shell }}"
+      with_items:
+        - "{{ dl_packages_to_install | default([]) }}"
+        - "{{ extra_dl_packages_to_install | default([]) }}"
+      when:
+        - item.shell is defined
+        - "item.binary_type == 'tar'"
+      tags:
+        - unarchive
+        - shell
+  when:
+    - dl_packages_locally | bool
+
+#####################
+# Install Ruby Gems #
+#####################
+- name: install ruby gems
+  gem:
+    name: "{{ item.gem_name }}"
+    version: "{{ item.version | default(omit) }}"
+    state: "{{ item.state | default('present') }}"
+    executable: "{{ gem_executable | default(omit) }}"
+    env_shebang: true
+  with_items:
+    - "{{ gems_to_install | default([]) }}"
+    - "{{ extra_gems_to_install | default([]) }}"
+  tags:
+    - gems
