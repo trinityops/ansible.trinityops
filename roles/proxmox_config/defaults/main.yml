@@ -1,0 +1,39 @@
+---
+
+disable_pve_ent_source: true
+pve_ent_source: 'deb https://enterprise.proxmox.com/debian/pve {{ ansible_distribution_release }} pve-enterprise'
+
+ceph_enterprise_os:
+  - bookworm
+
+proxmox_packages:
+  - vim
+  - tmux
+  - parted
+  - curl
+  - ifupdown2
+  - tcpdump
+
+config_nested_virtualization: true
+
+configure_cloud_init: true
+cloud_init_packages:
+  - cloud-init
+
+dark_theme_install: true
+dark_theme_oses:
+  - bullseye
+dark_theme_installer: 'PVEDiscordDark.sh'
+dark_theme_installer_url: 'https://raw.githubusercontent.com/Weilbyte/PVEDiscordDark/master/{{ dark_theme_installer }}'
+dark_theme_installer_path: '/root/{{ dark_theme_installer }}'
+dark_theme_install_check: '{{ dark_theme_installer_path }}'
+
+upgrade_proxmox_os_packages: true
+
+pci_passthrough_config: true
+pci_trigger_update_refresh: true
+pci_passthrough_modules:
+  - vfio
+  - vfio_iommu_type1
+  - vfio_pci
+  - vfio_virqfd
