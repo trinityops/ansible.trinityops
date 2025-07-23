@@ -1,0 +1,15 @@
+---
+
+apt_keys: []
+
+apt_repositories: []
+
+packages_to_install:
+  - vim
+  - git
+  - rsync
+  - tmux
+
+pip_executable: /usr/bin/pip
+
+gem_executable: /usr/bin/gem

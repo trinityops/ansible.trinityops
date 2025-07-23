@@ -1,0 +1,49 @@
+---
+
+# Workarounds for running the playbook in this role
+ansible_root_dir: "{{ playbook_dir }}"
+ansible_root_dir_roles_path: "{{ ansible_root_dir }}/roles"
+
+username: "{{ ansible_user | default('') }}"
+force_bootstrap: false
+
+############################
+# Preconfigure for Ansible #
+############################
+apt_packages_to_preinstall:
+  - python3
+  - python3-apt
+  - python3-pip
+
+dnf_packages_to_preinstall:
+  - python3
+  - python-dnf
+  - libselinux-python
+  - sudo
+
+#######################
+# Install OS Packages #
+#######################
+package_mgr_to_use: auto
+
+packages_to_remove: []
+
+packages_to_install: []
+
+homebrew_casks_to_install: []
+
+pip_executable: pip3
+
+pip_packages_to_install:
+  - virtualenv
+
+######################################
+# Install Custom/Downloaded Packages #
+######################################
+# Enable this if you want a local rpm/deb copy stored
+dl_packages_locally: false
+dl_packages_path: "/tmp"
+
+dl_packages_to_install: []
+
+gems_to_install: []

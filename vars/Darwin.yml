@@ -1,0 +1,28 @@
+---
+
+packages_to_install:
+  - tmux
+  - python3
+  - readline
+  - bash
+  - bash-completion
+  - binutils
+  - coreutils
+  - gnu-sed
+  - findutils
+  - tree
+  - wget
+  - ffmpeg
+  - md5deep
+  - ruby
+
+homebrew_casks_to_install:
+  - spectacle
+
+pip_executable: /usr/local/bin/pip
+
+gem_executable: /usr/local/opt/ruby/bin/gem
+
+gems_to_install:
+  - name: tmuxinator
+    gem_name: tmuxinator

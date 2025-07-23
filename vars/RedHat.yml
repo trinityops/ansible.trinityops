@@ -1,0 +1,16 @@
+---
+
+yum_keys: []
+
+yum_repos: []
+
+packages_to_install:
+  - epel-release
+  - tmux
+  - ruby
+  - git
+  - rsync
+
+gem_executable: /opt/rh/rh-ruby23/root/usr/bin/gem
+
+pip_executable: /usr/bin/pip

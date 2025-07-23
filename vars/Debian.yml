@@ -1,0 +1,27 @@
+---
+
+apt_keys: []
+
+apt_repositories:
+  - name: remove free apt repos
+    repo: "deb http://deb.debian.org/debian {{ ansible_distribution_release }} main"
+    state: absent
+  - name: remove free apt src repos
+    repo: "deb-src http://deb.debian.org/debian {{ ansible_distribution_release }} main"
+    state: absent
+  - name: add non-free free apt repos
+    repo: "deb http://deb.debian.org/debian {{ ansible_distribution_release }} main contrib non-free"
+    state: present
+    filename: debian-nonfree
+  - name: add non-free free apt repos
+    repo: "deb-src http://deb.debian.org/debian {{ ansible_distribution_release }} main contrib non-free"
+    state: present
+    filename: debian-nonfree
+
+packages_to_install:
+  - tmux
+  - vim
+  - git
+  - rsync
+
+gem_executable: /usr/bin/gem
