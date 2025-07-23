@@ -1,0 +1,9 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: false
+  vars:
+    configure_ssh_keys: false
+    ssh_keys: []
+  roles:
+    - role: ansible-ssh-port-probe
