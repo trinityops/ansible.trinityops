@@ -1,0 +1,176 @@
+---
+##############################
+# Configure APT repositories #
+##############################
+- name: configure /etc/apt/sources.list
+  template:
+    src: sources.list.j2
+    dest: /etc/apt/sources.list
+
+- name: comment out pve-enterprise repositories
+  replace:
+    path: /etc/apt/sources.list.d/pve-enterprise.list
+    regexp: '^{{ pve_ent_source }}'
+    replace: '# {{ pve_ent_source }}'
+  when: disable_pve_ent_source | bool
+
+- name: convert ceph to no-subscription
+  lineinfile:
+    path: /etc/apt/sources.list.d/ceph.list
+    state: present
+    regexp: '^deb https?://.*debian/ceph-quincy.*'
+    line: 'deb http://download.proxmox.com/debian/ceph-quincy {{ ansible_distribution_release }} no-subscription'
+  when: ansible_distribution_release in ceph_enterprise_os
+
+#########################
+# Install base packages #
+#########################
+- name: perform an apt update
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: install base packages
+  apt:
+    name: '{{ item }}'
+    state: present
+    update_cache: true
+  with_items:
+    - '{{ proxmox_packages | default([]) }}'
+
+#########################
+# Nested Virtualization #
+#########################
+- name: enable nested virtualization
+  block:
+    - name: set flag for nested virt for Intel
+      copy:
+        content: 'options kvm-intel nested=Y'
+        dest: /etc/modprobe.d/kvm-intel.conf
+      when: ansible_machine == 'x86_64'
+    
+    - name: enable Intel kernel module
+      modprobe:
+        name: kvm_intel
+        state: present
+      when: ansible_machine == 'x86_64'
+
+    #  cat /sys/module/kvm_intel/parameters/nested
+    
+    - name: set flag for nested virt for AMD
+      copy:
+        content: 'options kvm-amd nested=1'
+        dest: /etc/modprobe.d/kvm-amd.conf
+      when: ansible_machine != 'x86_64'
+    
+    - name: enable AMD kernel module
+      modprobe:
+        name: kvm_amd
+        state: present
+      when: ansible_machine != 'x86_64'
+  when: config_nested_virtualization | bool
+
+##############
+# Cloud-init #
+##############
+- name: configure cloud-init
+  block:
+    - name: install cloud-init packages
+      apt:
+        name: '{{ item }}'
+        state: present
+      with_items:
+        - '{{ cloud_init_packages | default([]) }}'
+  when: configure_cloud_init | bool
+
+######################
+# Upgrade Proxmox OS #
+######################
+- name: update all OS packages
+  block:
+    - name: update all packages to their latest version
+      apt:
+        name: "*"
+        state: latest
+
+    - name: upgrade the OS
+      apt:
+        upgrade: dist
+  when: upgrade_proxmox_os_packages | bool
+
+##############
+# Dark Theme #
+##############
+# bash <(curl -s https://raw.githubusercontent.com/Weilbyte/PVEDiscordDark/master/PVEDiscordDark.sh ) install
+- name: install Dark Theme
+  block:
+    - name: check if installed
+      stat:
+        path: '{{ dark_theme_install_check }}'
+      register: dark_theme_installed
+
+    - name: get Dark Theme installer
+      get_url:
+        url: '{{ dark_theme_installer_url }}'
+        dest: '{{ dark_theme_installer_path }}'
+        mode: '0755'
+
+    - name: run installer scripts
+      command: '{{ dark_theme_installer_path }} install'
+      when: not dark_theme_installed.stat.exists | bool
+      
+  when: 
+    - ansible_distribution_release in dark_theme_oses
+    - dark_theme_install | bool
+
+###################
+# PCI Passthrough #
+###################
+- name: configre PCI Passthrough
+  block:
+    ################
+    # Enable IOMMU #
+    ################
+    - name: enable IOMMU for Intel in /etc/kernel/cmdline
+      lineinfile:
+        path: /etc/kernel/cmdline
+        regexp: '^(root=ZFS=rpool/ROOT/pve-1 boot=zfs)(?!.*\b(intel_iommu=on|iommu=pt)\b)(.*)$'
+        line: '\1 intel_iommu=on iommu=pt\3'
+        backrefs: yes
+      when: ansible_machine == 'x86_64'
+      notify: 'refresh and update EFI and initramfs'
+    
+    - name: enable IOMMU for AMD in /etc/kernel/cmdline
+      lineinfile:
+        path: /etc/kernel/cmdline
+        regexp: '^(root=ZFS=rpool/ROOT/pve-1 boot=zfs)(?!.*\biommu=pt\b)(.*)$'
+        line: '\1 iommu=pt\2'
+        backrefs: yes
+      when: ansible_machine != 'x86_64'
+      notify: 'refresh and update EFI and initramfs'
+
+    #############################
+    # Enable PCI kernel modules #
+    #############################
+    - name: ensure that /etc/modules exists
+      file:
+        path: /etc/modules
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+
+    - name: remove vfio_virqfd if kernel version is newer than 6.2
+      set_fact:
+        pci_passthrough_modules: "{{ pci_passthrough_modules | difference(['vfio_virqfd']) }}"
+      when: ansible_kernel is version('6.2', '>')
+
+    - name: ensure all modules have been enabled in /etc/modules
+      lineinfile:
+        path: /etc/modules
+        line: '{{ item }}'
+        state: present
+      with_items: '{{ pci_passthrough_modules }}'
+      notify: 'refresh and update EFI and initramfs'
+  when: pci_passthrough_config | bool
+  tags:
+    - pci-pass
