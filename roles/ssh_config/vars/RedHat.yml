@@ -1,0 +1,8 @@
+---
+
+ssh_packages:
+  - libselinux-python
+  - policycoreutils-python
+  - openssh-server
+
+ssh_service: sshd
