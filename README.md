@@ -1,11 +1,11 @@
 # ansible.trinityops
 
-Ansible Collection
+Ansible Collection: https://galaxy.ansible.com/ui/namespaces/trinityopsdev/
 
 ## Using this Collections
 
 ```shell
-ansible-galaxy collection install trinityops.bootstrap
+ansible-galaxy collection install trinityopsdev.bootstrap
 ```
 
 ## Git Subtree
