@@ -43,6 +43,9 @@ git subtree pull --prefix=roles/docker https://github.com/lean-delivery/ansible-
 ## Building the Collection
 
 ```shell
+# Update version in galaxy.yml
+version: 1.0.0 # <major>.<minor>.<patch>
+
 # Build this collection
 ansible-galaxy collection build
 
