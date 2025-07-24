@@ -39,3 +39,14 @@ git subtree pull --prefix=roles/systemd_docker git@github.com:nfaction/ansible-s
 # external
 git subtree pull --prefix=roles/docker https://github.com/lean-delivery/ansible-role-docker.git master --squash
 ```
+
+## Building the Collection
+
+```shell
+# Build this collection
+ansible-galaxy collection build
+
+# Publish to Ansible Galaxy
+## API_TOKEN in GitHub creds.
+ansible-galaxy collection publish trinityopsdev-bootstrap-1.0.0.tar.gz --token YOUR_API_TOKEN
+```
